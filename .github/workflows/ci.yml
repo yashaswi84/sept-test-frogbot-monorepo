@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  BUILD_NAME: sept-test-frogbot-monorepo-ci
+  JF_NPM_RESOLVE: sept-test-npm
+  JF_NPM_DEPLOY: sept-test-npm-local
+  JF_PYPI_RESOLVE: sept-test-pypi
+  JF_GENERIC: sept-test-generic-local
+
+jobs:
+  frontend-npm:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: jfrog/setup-jfrog-cli@v4
+        env:
+          JF_URL: ${{ secrets.JF_URL }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+
+      - name: Configure npm
+        run: |
+          jf npm-config \
+            --repo-resolve="${{ env.JF_NPM_RESOLVE }}" \
+            --repo-deploy="${{ env.JF_NPM_DEPLOY }}"
+
+      - name: Prepare package
+        run: |
+          node -e "
+            const fs=require('fs');
+            const p=JSON.parse(fs.readFileSync('package.json','utf8'));
+            p.name='sept-test-monorepo-frontend';
+            p.private=false;
+            p.version='1.0.' + process.env.GITHUB_RUN_NUMBER;
+            fs.writeFileSync('package.json', JSON.stringify(p,null,2));
+          "
+
+      - name: Install + audit
+        run: |
+          jf npm install \
+            --build-name="${{ env.BUILD_NAME }}-frontend" \
+            --build-number="${{ github.run_number }}"
+          jf audit --npm --format=table || true
+
+      - name: Publish frontend
+        if: github.event_name != 'pull_request'
+        run: |
+          jf npm publish \
+            --build-name="${{ env.BUILD_NAME }}-frontend" \
+            --build-number="${{ github.run_number }}"
+          jf rt bce "${{ env.BUILD_NAME }}-frontend" "${{ github.run_number }}"
+          jf rt bp "${{ env.BUILD_NAME }}-frontend" "${{ github.run_number }}"
+
+  backend-python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: jfrog/setup-jfrog-cli@v4
+        env:
+          JF_URL: ${{ secrets.JF_URL }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+
+      - name: Configure pip resolve via Artifactory
+        run: |
+          jf pip-config \
+            --repo-resolve="${{ env.JF_PYPI_RESOLVE }}" \
+            --server-id-resolve=setup-jfrog-cli-server || true
+
+      - name: Install requirements + audit
+        run: |
+          pip install -r requirements.txt || true
+          jf audit --pip --requirements-file=requirements.txt --format=table || true
+
+      - name: Upload backend source archive
+        if: github.event_name != 'pull_request'
+        working-directory: .
+        run: |
+          tar czf /tmp/monorepo-backend.tgz -C backend .
+          jf rt u /tmp/monorepo-backend.tgz \
+            "${{ env.JF_GENERIC }}/source/frogbot-monorepo/backend-${{ github.run_number }}.tgz" \
+            --build-name="${{ env.BUILD_NAME }}-backend" \
+            --build-number="${{ github.run_number }}"
+          jf rt bce "${{ env.BUILD_NAME }}-backend" "${{ github.run_number }}"
+          jf rt bp "${{ env.BUILD_NAME }}-backend" "${{ github.run_number }}"

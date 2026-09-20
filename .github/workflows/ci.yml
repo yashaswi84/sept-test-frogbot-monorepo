@@ -38,9 +38,13 @@ jobs:
 
       - name: Configure npm
         run: |
+          # frontend lockfile previously pointed at another Artifactory (jfrogrepo24)
+          rm -f package-lock.json npm-shrinkwrap.json .npmrc
           jf npm-config \
             --repo-resolve="${{ env.JF_NPM_RESOLVE }}" \
-            --repo-deploy="${{ env.JF_NPM_DEPLOY }}"
+            --repo-deploy="${{ env.JF_NPM_DEPLOY }}" \
+            --server-id-resolve=setup-jfrog-cli-server \
+            --server-id-deploy=setup-jfrog-cli-server
 
       - name: Prepare package
         run: |
@@ -55,11 +59,10 @@ jobs:
 
       - name: Install + audit
         run: |
-          jf npm install \
+          jf npm install --ignore-scripts \
             --build-name="${{ env.BUILD_NAME }}-frontend" \
             --build-number="${{ github.run_number }}"
           jf audit --npm --format=table || true
-
       - name: Publish frontend
         if: github.event_name != 'pull_request'
         run: |

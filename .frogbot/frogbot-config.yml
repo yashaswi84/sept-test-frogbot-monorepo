@@ -1,0 +1,18 @@
+- params:
+    git:
+      repoName: sept-test-frogbot-monorepo
+      branches:
+        - main
+      aggregateFixes: true
+    scan:
+      minSeverity: "Medium"
+      fixableOnly: false
+      failOnSecurityIssues: false
+      disableJas: false
+      projects:
+        - workingDirs:
+            - frontend
+          installCommand: "npm install --ignore-scripts"
+        - workingDirs:
+            - backend
+          pipRequirementsFile: requirements.txt

@@ -1,0 +1,4 @@
+# Deliberately outdated — Frogbot SCA should flag these on repository scan.
+pyjwt==1.7.1
+urllib3==1.26.5
+pexpect==4.8.0
